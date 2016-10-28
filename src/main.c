@@ -13,7 +13,6 @@ extern const luaL_Reg extra_os_functions[];
 
 int main (int argc, char *argv[])
 {
-	int result;
 	char *main_path = ".";
 	char *main_lua;
 	lua_State *L;
@@ -24,13 +23,13 @@ int main (int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	premake_init(L);
-	premake_locate(L, argv[0]);
-	lua_setglobal(L, "_EXE_PATH");
-
 	luaL_openlibs(L);
 	luaL_requiref(L, "nettle", luaopen_nettle, 1);
 	lua_pop(L, 1);
+
+	premake_init(L);
+	premake_locate(L, argv[0]);
+	lua_setglobal(L, "_EXE_PATH");
 
 	if (argc > 1) {
 		const char *path;
