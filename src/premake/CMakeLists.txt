@@ -7,6 +7,7 @@ if(WIN32)
 endif(WIN32)
 
 add_library(premake
+	os_access.c
 	os_chdir.c
 	os_copyfile.c
 	os_elevate.c
