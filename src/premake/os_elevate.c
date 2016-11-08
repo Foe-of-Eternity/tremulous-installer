@@ -1,9 +1,11 @@
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include "premake.h"
 
-#if PLATFORM_WINDOWS
+#if defined(PLATFORM_WINDOWS)
 #include <shellapi.h>
-static int do_elevate(void)
+static int do_elevate(lua_State *L)
 {
 	BOOL is_elevated = FALSE;
 	HANDLE hToken = NULL;
@@ -45,15 +47,101 @@ static int do_elevate(void)
 	}
 	return 0;
 }
-#else
-static int do_elevate(void)
+#endif
+
+#if defined(PLATFORM_MACOSX)
+static int do_elevate(lua_State *L)
 {
+	char execpath[PATH_MAX];
+
+	if (geteuid() == 0) {
+		return 1;
+	}
+
+	get_executable_path(execpath, sizeof(execpath));
+	printf("%s\n", path);
+
+	OSStatus err;
+	AuthorizationRef ref;
+	AuthorizationFlags flags;
+
+	flags = kAuthorizationFlagDefaults;
+	err = AuthorizationCreate(NULL, kAuthorizationEmptyEnvironment, flags, &ref);
+
+	if (err != errAuthorizationSucess) {
+		return 0;
+	}
+
+	AuthorizationItem _temp = {kAuthorizationRightExecute, 0, NULL, 0};
+	AuthorizationRights rights = {1, &_temp};
+
+	flags = kAuthorizationFlagDefaults |
+			kAuthorizationFlagsInteractionAllowed |
+			kAuthorizationFlagsPreAuthorize |
+			kAuthorizationFlagsExtendRights;
+
+	err = AuthorizationCopyRights(ref, &rights, NULL, flags, NULL);
+	if (err != errAuthorizationSuccess) {
+		AuthorizationFree(ref, kAuthorizationFlagDefaults);
+		return 0;
+	}
+
+	flags = kAuthorizationFlagDefaults;
+	err = AuthorizationExecuteWithPrivileges(ref, execpath, flags, &(global_argv[1]), NULL);
+	AuthorizationFree(ref, kAuthorizationFlagDefaults);
+	if (err != errAuthorizationSucess) {
+		return 0;
+	}
+
+	exit(0);
+}
+#endif
+
+#if defined(PLATFORM_LINUX) || defined(PLATFORM_BSD)
+static int do_elevate(lua_State *L)
+{
+	char *pkexec, *display;
+	char cwd[PATH_MAX];
+	int argc = 0;
+	char *argv[6] = {0};
+
+	if (geteuid() == 0) {
+		return 1;
+	}
+
+	display = getenv("DISPLAY");
+	if (!display) {
+		return 0;
+	}
+
+	if (access("/usr/bin/pkexec", X_OK) != -1) {
+		pkexec = "/usr/bin/pkexec";
+	} else if (access("/usr/local/bin/pkexec", X_OK) != -1) {
+		pkexec = "/usr/local/bin/pkexec";
+	} else {
+		return 0;
+	}
+
+	argv[argc++] = "pkexec";
+	argv[argc++] = "--user";
+	argv[argc++] = "root";
+
+	lua_getglobal(L, "_EXE_PATH");
+	argv[argc++] = (char *) lua_tostring(L, 1);
+
+	getcwd(cwd, sizeof(cwd));
+	argv[argc++] = cwd;
+
+	execv(pkexec, argv);
+
+	fprintf(stderr, "execv failed\n");
+	lua_pop(L, 1);
 	return 0;
 }
 #endif
 
 int os_elevate(lua_State* L)
 {
-	lua_pushboolean(L, do_elevate());
+	lua_pushboolean(L, do_elevate(L));
 	return 1;
 }
